@@ -8,6 +8,58 @@ import Board from './components/Board';
 import GameInfoPanel from './components/GameInfoPanel';
 import GameHistory from './components/GameHistory';
 
+// UI: Game Controls components for join/create game
+function GameControls({ onCreate, onJoin, joinId, setJoinId, currentGameId }) {
+  return (
+    <div style={{ marginBottom: 18, width: "100%" }}>
+      <form
+        onSubmit={e => {
+          e.preventDefault();
+          onJoin(joinId);
+        }}
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          gap: 8,
+          marginBottom: 10,
+          alignItems: "center",
+        }}
+        autoComplete="off"
+      >
+        <input
+          type="text"
+          placeholder="Enter Game ID"
+          value={joinId}
+          onChange={e => setJoinId(e.target.value)}
+          style={{
+            padding: "7px 8px",
+            borderRadius: 6,
+            border: "1px solid var(--border-color)",
+            width: 110,
+            fontSize: 15,
+            background: "var(--bg-secondary)",
+            color: "var(--text-primary)",
+          }}
+          aria-label="Game ID"
+          autoFocus={false}
+          name="join-game-id"
+        />
+        <button type="submit" className="ttt-newgame" style={{ minWidth: 76 }}>
+          Join Game
+        </button>
+      </form>
+      <button className="ttt-newgame" style={{ width: "100%" }} onClick={onCreate}>
+        {currentGameId ? "Start New Game" : "Create Game"}
+      </button>
+      {currentGameId && (
+        <div style={{ marginTop: 9, fontSize: 13, color: "#999" }}>
+          <span style={{ fontWeight: 600 }}>Game ID:</span>{" "}
+          <span style={{ fontFamily: "monospace", letterSpacing: 0.5 }}>{currentGameId}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 /**
  * Tic Tac Toe frontend: Connects to FastAPI backend via RESTful API for gameplay, state, and history.
  * Robust error handling and API config included.
@@ -37,7 +89,6 @@ async function apiGet(path) {
   return await resp.json();
 }
 
-// PUBLIC_INTERFACE
 function App() {
   // === Theme handling (light only per spec, allow future toggle) ===
   const [themeMode, setThemeMode] = useState('light');
@@ -60,6 +111,9 @@ function App() {
   const [error, setError] = useState(null);
   const [gameId, setGameId] = useState(null);
 
+  // UI state for join
+  const [joinGameIdInput, setJoinGameIdInput] = useState("");
+
   // --- API: fetch latest game state ---
   async function fetchGameState(id) {
     try {
@@ -79,10 +133,11 @@ function App() {
   async function newGame() {
     setError(null);
     try {
-      const resp = await apiPost("/game/start", {}); // Optionally add players
+      const resp = await apiPost("/game/start", {});
       setGameId(resp.game_id || null);
       setStep(0);
       setMoveDesc([{ desc: "Game start", squares: resp.squares || Array(9).fill("") }]);
+      setJoinGameIdInput("");
       if (resp.game_id) {
         await fetchGameState(resp.game_id);
       } else {
@@ -95,6 +150,31 @@ function App() {
       fetchHistory();
     } catch (e) {
       setError("Unable to start new game");
+    }
+  }
+
+  // PUBLIC_INTERFACE
+  async function joinGame(gameIdToJoin) {
+    setError(null);
+    if (!gameIdToJoin) {
+      setError("Please enter a game ID.");
+      return;
+    }
+    try {
+      // "Join" the game by fetching its state; backend should validate existence and return state
+      const stateResp = await apiGet(`/game/state?game_id=${gameIdToJoin}`);
+      setGameId(gameIdToJoin);
+      setStep(0);
+      setSquares(stateResp.squares || Array(9).fill(""));
+      setCurrent(stateResp.current || "X");
+      setWinner(stateResp.winner || null);
+      setDraw(stateResp.draw || false);
+      setWinningLine(stateResp.winning_line || null);
+      setMoveDesc([{ desc: "Joined Game", squares: stateResp.squares || Array(9).fill("") }]);
+      setJoinGameIdInput("");
+      fetchHistory(); // (optional, refreshes list)
+    } catch (e) {
+      setError("Unable to join game. Check Game ID.");
     }
   }
 
@@ -166,6 +246,14 @@ function App() {
       <Header />
       <Layout>
         {error && <div style={{ color: theme.colors.error, marginBottom: 12 }}>{error}</div>}
+        {/* Game Controls */}
+        <GameControls
+          onCreate={newGame}
+          onJoin={joinGame}
+          joinId={joinGameIdInput}
+          setJoinId={setJoinGameIdInput}
+          currentGameId={gameId}
+        />
         <main className="ttt-main">
           <section className="ttt-main-left">
             <Board squares={squares} onMove={handleMove} winningLine={winningLine} />
@@ -178,7 +266,6 @@ function App() {
               winner={winner}
               draw={draw}
             />
-            <button className="ttt-newgame" onClick={newGame}>New Game</button>
           </aside>
         </main>
         <GameHistory
