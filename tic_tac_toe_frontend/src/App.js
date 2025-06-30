@@ -270,33 +270,38 @@ function App() {
   // PUBLIC_INTERFACE
   async function handleMove(idx) {
     setError(null);
-    // Determine row/col
     if (typeof idx !== "number" || idx < 0 || idx > 8) return;
     if (!gameId || !gameState || !playerSymbol) { setError("No game, or your symbol missing."); return; }
-    // Board structure from backend is 2D array (3x3) in [row][col]
     let row = Math.floor(idx / 3), col = idx % 3;
-    // Don't make move if square is filled
     if (Array.isArray(gameState.board) &&
       Array.isArray(gameState.board[row]) &&
       !!gameState.board[row][col]) return;
-    // Don't allow move if winner or draw
     if (gameState.winner || gameState.draw) return;
     try {
-      // Move request requires: game_id, player, row, col
+      // Move through backend only.
       const resp = await apiPost("/game/move", {
         game_id: gameId,
         player: playerSymbol,
         row,
         col,
       });
-      setGameState(gs => ({
-        ...gs,
-        ...resp
-      }));
-      fetchMoveHistory(gameId);
+      // Always fetch up-to-date state from backend after making a move
+      await fetchGameState(gameId); // refreshes UI by polling backend
       fetchHistory();
     } catch (e) {
-      setError("Unable to make move: " + (e.message || ""));
+      // Try to parse backend error
+      let detail = "";
+      try {
+        // e.message might be "API error: 400 | {\"detail\":\"Not your turn.\"}"
+        if (e.message && e.message.includes("{")) {
+          const errBody = e.message.substring(e.message.indexOf("|") + 1).trim();
+          const parsed = JSON.parse(errBody);
+          detail = parsed.detail || "";
+        }
+      } catch (_) { /* ignore */ }
+      setError("Unable to make move: " + (detail || e.message || ""));
+      // ALWAYS force refresh after error (may have lost sync with backend state)
+      await fetchGameState(gameId);
     }
   }
 
@@ -404,6 +409,19 @@ function App() {
   const playerX = (gameState?.players && gameState?.players["X"]) || "X";
   const playerO = (gameState?.players && gameState?.players["O"]) || "O";
 
+  // === Determine if it is truly user's turn (based ON BACKEND STATE!) ===
+  const isPlayersTurn = (
+    // We can only decide if we know both the player's symbol and current turn
+    !!playerSymbol && !winner && !draw && current === playerSymbol &&
+    (
+      // For multiplayer: check name matches symbol in backend, if possible
+      !gameState?.players ||
+      (playerSymbol === "X"
+        ? playerX === playerName
+        : playerO === playerName)
+    )
+  );
+
   // History for UI GameHistory component
   const moveHistory =
     Array.isArray(history) && history.length > 0
@@ -431,7 +449,15 @@ function App() {
         />
         <main className="ttt-main">
           <section className="ttt-main-left">
-            <Board squares={squaresFlat} onMove={handleMove} winningLine={null} />
+            <Board
+              squares={squaresFlat}
+              onMove={isPlayersTurn ? handleMove : null}
+              winningLine={null}
+              isPlayersTurn={isPlayersTurn}
+              current={current}
+              playerSymbol={playerSymbol}
+              gameState={gameState}
+            />
           </section>
           <aside className="ttt-main-right">
             <GameInfoPanel

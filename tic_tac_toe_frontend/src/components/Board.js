@@ -1,21 +1,42 @@
 import React from "react";
 
-// PUBLIC_INTERFACE
-export default function Board({ squares, onMove, winningLine }) {
-  /**
-   * The tic-tac-toe board. Squares is an array of 9 ("" | "X" | "O").
-   * onMove(idx) is called when empty square idx is clicked.
-   * winningLine: optional [indices...] for highlight
-   */
+/**
+ * Board renders the tic-tac-toe board, squares is ["", "X", ...].
+ * Only allows click/moves if all:
+ *   - No winner
+ *   - That square is empty
+ *   - onMove is provided (which is ONLY when it's really your turn, enforced by App)
+ */
+export default function Board({
+  squares,
+  onMove,
+  winningLine,
+  isPlayersTurn = true,
+  current,
+  playerSymbol,
+  gameState,
+}) {
   function renderSquare(i) {
     const highlight = winningLine && winningLine.includes(i);
+    const squareTaken = Boolean(squares[i]);
+    // Only clickable/active if it's player's turn, onMove is available, and square is empty, no winner/draw
+    const isDisabled = (
+      !onMove ||
+      squareTaken ||
+      (gameState && (gameState.winner || gameState.draw))
+    );
     return (
       <button
         className={`ttt-square${highlight ? " ttt-win" : ""}`}
         key={i}
-        onClick={() => onMove(i)}
-        disabled={Boolean(squares[i])}
+        onClick={() => { if (!isDisabled && onMove) onMove(i); }}
+        disabled={isDisabled}
         aria-label={`Board square ${i + 1}: ${squares[i] || 'empty'}`}
+        style={!isDisabled && onMove ? { cursor: "pointer" } : undefined}
+        title={isDisabled
+          ? (!onMove ? "Not your turn" : squareTaken ? "Already played" : "Game ended")
+          : "Click to move"
+        }
       >
         {squares[i]}
       </button>
