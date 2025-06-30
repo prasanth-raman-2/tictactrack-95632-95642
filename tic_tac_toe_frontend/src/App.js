@@ -9,25 +9,32 @@ import GameInfoPanel from './components/GameInfoPanel';
 import GameHistory from './components/GameHistory';
 
 /**
- * Modern, minimalistic Tic Tac Toe app with theme support and component layout.
- * Integrates Board, InfoPanel, and History per requirements.
+ * Tic Tac Toe frontend: Connects to FastAPI backend via RESTful API for gameplay, state, and history.
+ * Replaces all local-only logic with backend fetches. Robust error handling and API config included.
  */
 
-// Helper to check winner (for local demo/logic stub)
-const LINES = [
-  [0,1,2],[3,4,5],[6,7,8],
-  [0,3,6],[1,4,7],[2,5,8],
-  [0,4,8],[2,4,6]
-];
-function calculateWinner(squares) {
-  for (let line of LINES) {
-    const [a,b,c] = line;
-    if (squares[a] && squares[a]===squares[b] && squares[a]===squares[c]) {
-      return {player: squares[a], line};
-    }
+// Backend base URL - can be set via environment or fallback to suggested URL for Docker/local dev.
+const API_BASE = process.env.REACT_APP_API_BASE || "https://vscode-internal-8858-beta.beta01.cloud.kavia.ai:3001";
+
+// === API Helpers ===
+async function apiPost(path, data) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data || {}),
+  });
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status}`);
   }
-  if (squares.every(Boolean)) return {player: null, line: null, draw: true};
-  return null;
+  return await resp.json();
+}
+
+async function apiGet(path) {
+  const resp = await fetch(`${API_BASE}${path}`);
+  if (!resp.ok) {
+    throw new Error(`API error: ${resp.status}`);
+  }
+  return await resp.json();
 }
 
 // PUBLIC_INTERFACE
@@ -40,50 +47,105 @@ function App() {
   // --- End theme
 
   // === Game state ===
-  const [playerX, setPlayerX] = useState(""); // for registration, not yet implemented
+  const [squares, setSquares] = useState(Array(9).fill(""));
+  const [playerX, setPlayerX] = useState(""); // Optional: Could support future login/registration
   const [playerO, setPlayerO] = useState("");
-  const [history, setHistory] = useState([
-    { squares: Array(9).fill(""), desc: "Game start" }
-  ]);
+  const [current, setCurrent] = useState("X");
+  const [winner, setWinner] = useState(null);
+  const [draw, setDraw] = useState(false);
+  const [winningLine, setWinningLine] = useState(null);
+  const [moveDesc, setMoveDesc] = useState([]);
   const [step, setStep] = useState(0);
-  const current = step % 2 === 0 ? "X" : "O";
-  const squares = history[step].squares;
-  const result = calculateWinner(squares);
-  const winner = result?.player;
-  const draw = result?.draw;
-  const winningLine = result?.line;
+  const [gameHistory, setGameHistory] = useState([]);
+  const [error, setError] = useState(null);
+  const [gameId, setGameId] = useState(null);
 
-  // === Move handler ===
+  // --- Fetch history on load ---
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  // --- API: Start a new game ---
   // PUBLIC_INTERFACE
-  function handleMove(idx) {
-    if (squares[idx] || winner || draw) return;
-    const next = squares.slice();
-    next[idx] = current;
-    setHistory(h =>
-      h.slice(0, step + 1).concat([{
-        squares: next,
-        desc: `Move #${step + 1}: ${current} to (${1 + (idx % 3)}, ${1 + Math.floor(idx/3)})`
-      }])
-    );
-    setStep(step + 1);
+  async function newGame() {
+    setError(null);
+    try {
+      const resp = await apiPost("/game/start", {}); // Optionally add players
+      setSquares(resp.squares || Array(9).fill(""));
+      setCurrent(resp.current || "X");
+      setWinner(resp.winner || null);
+      setDraw(resp.draw || false);
+      setWinningLine(resp.winning_line || null);
+      setStep(0);
+      setGameId(resp.game_id || null);
+      setMoveDesc([{ desc: "Game start", squares: resp.squares || Array(9).fill("") }]);
+      fetchHistory(); // Refresh history
+    } catch (e) {
+      setError("Unable to start new game");
+    }
   }
 
+  // --- API: Make a move ---
   // PUBLIC_INTERFACE
-  function handleJump(move) {
-    setStep(move);
+  async function handleMove(idx) {
+    setError(null);
+    if (winner || draw || squares[idx] !== "") return;
+    try {
+      const body = {
+        game_id: gameId,
+        move: idx,
+        player: current,
+      };
+      const resp = await apiPost("/game/move", body);
+      setSquares(resp.squares || Array(9).fill(""));
+      setCurrent(resp.current || (current === "X" ? "O" : "X"));
+      setWinner(resp.winner || null);
+      setDraw(resp.draw || false);
+      setWinningLine(resp.winning_line || null);
+      setStep(step + 1);
+      setMoveDesc(moves => moves.concat([{ desc: resp.desc || `Move #${step + 1}: ${current} to (${1 + (idx % 3)}, ${1 + Math.floor(idx/3)})`, squares: resp.squares || Array(9).fill("") }]));
+      if (resp.winner || resp.draw) {
+        fetchHistory(); // Update history at end of game
+      }
+    } catch (e) {
+      setError("Unable to make move");
+    }
   }
 
+  // --- API: Go to move in history (local move stack only for current game) ---
   // PUBLIC_INTERFACE
-  function newGame() {
-    setHistory([{ squares: Array(9).fill(""), desc: "Game start" }]);
-    setStep(0);
+  function handleJump(moveIdx) {
+    // Limit: only works for current session (not persisted per move in backend)
+    setStep(moveIdx);
+    const move = moveDesc[moveIdx] || { squares: Array(9).fill("") };
+    setSquares(move.squares);
+    // Winner/draw detection from move or API could be fancier
   }
+
+  // --- API: Game history ---
+  // PUBLIC_INTERFACE
+  async function fetchHistory() {
+    setError(null);
+    try {
+      const resp = await apiGet("/history/");
+      setGameHistory(resp.history || []);
+    } catch (e) {
+      setGameHistory([]);
+      setError("Unable to fetch history");
+    }
+  }
+
+  // --- Auto-start a game on app load if needed ---
+  useEffect(() => {
+    newGame();
+  }, []);
 
   // === Render ===
   return (
     <div className="App" style={{ background: theme.colors.secondary, color: theme.colors.text }}>
       <Header />
       <Layout>
+        {error && <div style={{ color: theme.colors.error, marginBottom: 12 }}>{error}</div>}
         <main className="ttt-main">
           <section className="ttt-main-left">
             <Board squares={squares} onMove={handleMove} winningLine={winningLine} />
@@ -100,10 +162,25 @@ function App() {
           </aside>
         </main>
         <GameHistory
-          history={history}
+          history={moveDesc.length > 1 ? moveDesc : [{ desc: "Game start", squares }]}
           onJump={handleJump}
           currentMove={step}
         />
+        <div style={{ marginTop: 24 }}>
+          <div className="ttt-history-title" style={{ fontWeight: 700 }}>Game History (All)</div>
+          {Array.isArray(gameHistory) && gameHistory.length > 0 ? (
+            <ul style={{ paddingLeft: 18, textAlign: "left" }}>
+              {gameHistory.map((g, i) => (
+                <li key={i}>
+                  {g.date ? `${g.date}: ` : ""}
+                  {g.result ? `${g.result}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ color: "#888" }}>No past games yet.</div>
+          )}
+        </div>
       </Layout>
     </div>
   );
