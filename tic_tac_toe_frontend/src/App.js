@@ -9,7 +9,10 @@ import GameInfoPanel from './components/GameInfoPanel';
 import GameHistory from './components/GameHistory';
 
 // UI: Game Controls components for join/create game
-function GameControls({ onCreate, onJoin, joinId, setJoinId, currentGameId }) {
+function GameControls({
+  onCreate, onJoin, joinId, setJoinId, currentGameId,
+  selectedMode, setSelectedMode
+}) {
   return (
     <div style={{ marginBottom: 18, width: "100%" }}>
       <form
@@ -48,7 +51,36 @@ function GameControls({ onCreate, onJoin, joinId, setJoinId, currentGameId }) {
           Join Game
         </button>
       </form>
-      <button className="ttt-newgame" style={{ width: "100%" }} onClick={onCreate}>
+      {/* Mode selection for new game */}
+      <div style={{ marginBottom: 9, display: "flex", gap: 8, justifyContent: "center" }}>
+        <label style={{
+          display: "flex", alignItems: "center", gap: 6, fontSize: 15, cursor: "pointer"
+        }}>
+          <input
+            type="radio"
+            name="game-mode"
+            value="human"
+            checked={selectedMode === "human"}
+            onChange={() => setSelectedMode("human")}
+            style={{ accentColor: "var(--ttt-primary)" }}
+          />
+          Play vs Human
+        </label>
+        <label style={{
+          display: "flex", alignItems: "center", gap: 6, fontSize: 15, cursor: "pointer"
+        }}>
+          <input
+            type="radio"
+            name="game-mode"
+            value="ai"
+            checked={selectedMode === "ai"}
+            onChange={() => setSelectedMode("ai")}
+            style={{ accentColor: "var(--ttt-accent)" }}
+          />
+          Play vs AI
+        </label>
+      </div>
+      <button className="ttt-newgame" style={{ width: "100%" }} onClick={() => onCreate(selectedMode)}>
         {currentGameId ? "Start New Game" : "Create Game"}
       </button>
       {currentGameId && (
@@ -99,7 +131,7 @@ function App() {
 
   // === Game state ===
   const [squares, setSquares] = useState(Array(9).fill(""));
-  const [playerX, setPlayerX] = useState(""); // Future: support for real player info
+  const [playerX, setPlayerX] = useState(""); // Player name or marker
   const [playerO, setPlayerO] = useState("");
   const [current, setCurrent] = useState("X");
   const [winner, setWinner] = useState(null);
@@ -110,6 +142,9 @@ function App() {
   const [gameHistory, setGameHistory] = useState([]);
   const [error, setError] = useState(null);
   const [gameId, setGameId] = useState(null);
+  // New: game mode state ("human" or "ai"), store also last used mode for smooth UX
+  const [selectedMode, setSelectedMode] = useState("human");
+  const [activeMode, setActiveMode] = useState("human"); // The mode for the current game
 
   // UI state for join
   const [joinGameIdInput, setJoinGameIdInput] = useState("");
@@ -145,14 +180,19 @@ function App() {
 
   // --- API: Start a new game ---
   // PUBLIC_INTERFACE
-  async function newGame() {
+  async function newGame(modeOverride) {
     setError(null);
+    // Use modeOverride for "start new game" button, fallback to selectedMode for auto-starts
+    const mode = modeOverride || selectedMode || "human";
     try {
-      const resp = await apiPost("/game/start", {});
+      const resp = await apiPost("/game/start", {
+        mode: mode === "ai" ? "ai" : "human"
+      });
       setGameId(resp.game_id || null);
       setStep(0);
       setMoveDesc([{ desc: "Game start", squares: resp.squares || Array(9).fill("") }]);
       setJoinGameIdInput("");
+      setActiveMode(resp.mode || mode); // store mode for current game
       if (resp.game_id) {
         await fetchGameState(resp.game_id);
       } else {
@@ -187,6 +227,8 @@ function App() {
       setWinningLine(stateResp.winning_line || null);
       setMoveDesc([{ desc: "Joined Game", squares: stateResp.squares || Array(9).fill("") }]);
       setJoinGameIdInput("");
+      // Try to detect mode from backend state, fallback to current selected mode
+      setActiveMode(stateResp.mode || selectedMode || "human");
       fetchHistory(); // (optional, refreshes list)
     } catch (e) {
       setError("Unable to join game. Check Game ID.");
@@ -217,6 +259,32 @@ function App() {
         ])
       );
       fetchHistory();
+
+      // If in AI mode and game not ended and after a human's move, ask backend for AI move
+      // Assumption: Player X is always the human, O is AI and AI moves after X
+      if (
+        activeMode === "ai" &&
+        !winner &&
+        !draw
+      ) {
+        // Fetch next state to get current player, trigger only if it's now AI's turn
+        const stateResp = await apiGet(`/game/state?game_id=${gameId}`);
+        if (stateResp.current === "O" && !stateResp.winner && !stateResp.draw) {
+          // Trigger AI move (could be backend auto, but trigger/post if needed)
+          // Option 1: Poll after small delay to let AI backend move, if AI is automatic
+          // Option 2: If manual, POST to /game/move for AI; assume automatic for now
+          // Wait and refetch state after slight delay (simulate AI "thinking" if backend is fast)
+          setTimeout(async () => {
+            try {
+              await fetchGameState(gameId);
+              fetchHistory();
+            } catch {
+              /* Ignore errors for auto-AI-move refetch */
+            }
+          }, 700); // 700ms for UI feedback
+        }
+      }
+
     } catch (e) {
       setError("Unable to make move");
     }
@@ -268,6 +336,8 @@ function App() {
           joinId={joinGameIdInput}
           setJoinId={setJoinGameIdInput}
           currentGameId={gameId}
+          selectedMode={selectedMode}
+          setSelectedMode={setSelectedMode}
         />
         <main className="ttt-main">
           <section className="ttt-main-left">
