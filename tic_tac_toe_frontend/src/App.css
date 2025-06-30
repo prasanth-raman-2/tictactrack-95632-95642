@@ -1,13 +1,22 @@
 /* CSS Variables for Theme Management */
 :root {
-  /* Light theme colors */
-  --bg-primary: #ffffff;
+  --ttt-primary: #1976d2;
+  --ttt-accent: #f44336;
+  --ttt-secondary: #fafafa;
+  --ttt-border: #e0e0e0;
+  --ttt-bg: #fafafa;
+  --ttt-header-bg: #fff;
+  --ttt-win-bg: #c8e6c9;
+  --ttt-win-border: #81c784;
+  --ttt-font: 'Inter', 'Segoe UI', Arial, sans-serif;
+  --ttt-radius: 10px;
+  --bg-primary: #fff;
   --bg-secondary: #f8f9fa;
-  --text-primary: #282c34;
-  --text-secondary: #61dafb;
-  --border-color: #e9ecef;
-  --button-bg: #007bff;
-  --button-text: #ffffff;
+  --text-primary: #222;
+  --text-secondary: #555;
+  --border-color: #e0e0e0;
+  --button-bg: #1976d2;
+  --button-text: #fff;
 }
 
 [data-theme="dark"] {
@@ -40,17 +49,212 @@
   }
 }
 
-.App-header {
-  background-color: var(--bg-secondary);
-  min-height: 100vh;
+/* -----------------------------------------------------
+   GENERAL LAYOUT & HEADER
+--------------------------------------------------------*/
+
+.header {
+  background: var(--ttt-header-bg);
+  border-bottom: 1px solid var(--ttt-border);
+  padding: 24px 0 16px;
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.header-title {
+  margin: 0;
+  font-family: var(--ttt-font);
+  color: var(--ttt-primary);
+  font-size: 2.3rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.ttt-layout {
+  max-width: 650px;
+  margin: 0 auto;
+  padding: 24px 10px;
+}
+
+.ttt-main {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 32px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.ttt-main-left {
+  flex: 1 1 340px;
+  min-width: 300px;
+  display: flex;
+  justify-content: center;
+}
+.ttt-main-right {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  align-items: flex-start;
+  min-width: 180px;
+  gap: 18px;
+}
+
+/* -----------------------------------------------------
+   BOARD
+--------------------------------------------------------*/
+.ttt-board {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ttt-board-row {
+  display: flex;
+  gap: 5px;
+}
+.ttt-square {
+  width: 64px;
+  height: 64px;
+  font-family: var(--ttt-font);
+  font-size: 2rem;
+  font-weight: 700;
+  border: 2px solid var(--ttt-primary);
+  background: #fff;
+  color: var(--ttt-primary);
+  border-radius: var(--ttt-radius);
+  outline: none;
+  transition: background 0.15s, color 0.15s, border 0.15s;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  box-shadow: 0 1px 2px rgba(25, 118, 210, 0.04);
+}
+.ttt-square:disabled {
+  color: #c1c1c1;
+  background: var(--ttt-secondary);
+  cursor: default;
+  opacity: 1;
+}
+.ttt-square.ttt-win {
+  background: var(--ttt-win-bg);
+  border-color: var(--ttt-win-border);
+  color: var(--ttt-accent);
+}
+
+/* -----------------------------------------------------
+   INFO PANEL
+--------------------------------------------------------*/
+.ttt-info-panel {
+  border: 1px solid var(--ttt-border);
+  background: #fff;
+  border-radius: var(--ttt-radius);
+  padding: 14px 18px 11px;
+  min-width: 180px;
+  box-shadow: 0 1px 3px rgba(25, 118, 210, 0.07);
+  font-family: var(--ttt-font);
+}
+.ttt-info-title {
+  color: var(--ttt-primary);
+  font-weight: 700;
+  margin-bottom: 7px;
+  font-size: 1.1rem;
+}
+.ttt-info-status {
+  margin: 7px 0 6px;
+  font-size: 1.13rem;
+  font-weight: 600;
+  color: var(--ttt-accent);
+}
+.ttt-info-players {
+  font-size: 0.97rem;
+  color: var(--text-secondary);
+}
+
+/* -----------------------------------------------------
+   NEW GAME BUTTON
+--------------------------------------------------------*/
+.ttt-newgame {
+  width: 100%;
+  background: var(--ttt-primary);
+  color: var(--button-text);
+  border: none;
+  padding: 10px 0;
+  font-family: var(--ttt-font);
+  font-weight: 600;
+  border-radius: var(--ttt-radius);
+  margin-top: 8px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 5px rgba(25, 118, 210, 0.08);
+  transition: background 0.13s, transform 0.1s;
+}
+.ttt-newgame:hover {
+  background: #145fab;
+  transform: translateY(-1px) scale(1.02);
+}
+.ttt-newgame:active {
+  transform: none;
+}
+
+/* -----------------------------------------------------
+   GAME HISTORY
+--------------------------------------------------------*/
+.ttt-history {
+  margin-top: 10px;
+  padding: 0 6px 7px;
+  background: #fff;
+  border: 1px solid var(--ttt-border);
+  border-radius: var(--ttt-radius);
+  font-family: var(--ttt-font);
+  box-shadow: 0 1px 2px rgba(68, 68, 68, 0.06);
+}
+.ttt-history-title {
+  margin: 9px 0 8px;
+  color: var(--ttt-accent);
+  font-weight: 600;
+  font-size: 1.06rem;
+}
+.ttt-history-list {
+  padding-left: 20px;
+  margin: 0;
+}
+.ttt-history-btn {
+  font-family: var(--ttt-font);
+  border: none;
+  background: inherit;
+  color: var(--ttt-primary);
+  padding: 0;
+  font-size: 0.98rem;
+  cursor: pointer;
+  transition: color 0.16s;
+  text-decoration: underline;
+  margin-bottom: 2px;
+}
+.ttt-history-btn.ttt-history-btn-current,
+.ttt-history-btn:disabled {
+  font-weight: 700;
+  color: #aaa;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* -----------------------------------------------------
+   RESPONSIVE
+--------------------------------------------------------*/
+@media (max-width: 650px) {
+  .ttt-layout { padding: 6px 2px; }
+  .ttt-main { flex-direction: column; gap: 18px; align-items: center;}
+  .ttt-board { transform: scale(0.9);}
+  .ttt-info-panel { min-width: 130px; padding: 10px 9px;}
+}
+
+/* -----------------------------------------------------
+   LEGACY CLASSES (for theme toggle etc.)
+--------------------------------------------------------*/
+.App {
+  text-align: center;
+  background-color: var(--bg-primary);
   color: var(--text-primary);
-  transition: background-color 0.3s ease;
-  position: relative;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .App-link {
