@@ -128,6 +128,21 @@ function App() {
     }
   }
 
+  // --- Real-time updates using polling ---
+  useEffect(() => {
+    if (!gameId) return;
+
+    // Set up polling to fetch game state every 1.5 seconds when a game is active
+    const interval = setInterval(() => {
+      fetchGameState(gameId);
+    }, 1500);
+
+    return () => {
+      clearInterval(interval);
+    };
+    // Only restart interval if gameId changes
+  }, [gameId]);
+
   // --- API: Start a new game ---
   // PUBLIC_INTERFACE
   async function newGame() {
