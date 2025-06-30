@@ -10,7 +10,7 @@ import GameHistory from './components/GameHistory';
 
 /**
  * Tic Tac Toe frontend: Connects to FastAPI backend via RESTful API for gameplay, state, and history.
- * Replaces all local-only logic with backend fetches. Robust error handling and API config included.
+ * Robust error handling and API config included.
  */
 
 // Backend base URL - can be set via environment or fallback to suggested URL for Docker/local dev.
@@ -48,7 +48,7 @@ function App() {
 
   // === Game state ===
   const [squares, setSquares] = useState(Array(9).fill(""));
-  const [playerX, setPlayerX] = useState(""); // Optional: Could support future login/registration
+  const [playerX, setPlayerX] = useState(""); // Future: support for real player info
   const [playerO, setPlayerO] = useState("");
   const [current, setCurrent] = useState("X");
   const [winner, setWinner] = useState(null);
@@ -60,10 +60,19 @@ function App() {
   const [error, setError] = useState(null);
   const [gameId, setGameId] = useState(null);
 
-  // --- Fetch history on load ---
-  useEffect(() => {
-    fetchHistory();
-  }, []);
+  // --- API: fetch latest game state ---
+  async function fetchGameState(id) {
+    try {
+      const stateResp = await apiGet(`/game/state?game_id=${id}`);
+      setSquares(stateResp.squares || Array(9).fill(""));
+      setCurrent(stateResp.current || "X");
+      setWinner(stateResp.winner || null);
+      setDraw(stateResp.draw || false);
+      setWinningLine(stateResp.winning_line || null);
+    } catch (e) {
+      setError("Unable to update board from backend");
+    }
+  }
 
   // --- API: Start a new game ---
   // PUBLIC_INTERFACE
@@ -71,21 +80,25 @@ function App() {
     setError(null);
     try {
       const resp = await apiPost("/game/start", {}); // Optionally add players
-      setSquares(resp.squares || Array(9).fill(""));
-      setCurrent(resp.current || "X");
-      setWinner(resp.winner || null);
-      setDraw(resp.draw || false);
-      setWinningLine(resp.winning_line || null);
-      setStep(0);
       setGameId(resp.game_id || null);
+      setStep(0);
       setMoveDesc([{ desc: "Game start", squares: resp.squares || Array(9).fill("") }]);
-      fetchHistory(); // Refresh history
+      if (resp.game_id) {
+        await fetchGameState(resp.game_id);
+      } else {
+        setSquares(resp.squares || Array(9).fill(""));
+        setCurrent(resp.current || "X");
+        setWinner(resp.winner || null);
+        setDraw(resp.draw || false);
+        setWinningLine(resp.winning_line || null);
+      }
+      fetchHistory();
     } catch (e) {
       setError("Unable to start new game");
     }
   }
 
-  // --- API: Make a move ---
+  // --- API: Make a move and always fetch board latest from backend ---
   // PUBLIC_INTERFACE
   async function handleMove(idx) {
     setError(null);
@@ -96,26 +109,27 @@ function App() {
         move: idx,
         player: current,
       };
-      const resp = await apiPost("/game/move", body);
-      setSquares(resp.squares || Array(9).fill(""));
-      setCurrent(resp.current || (current === "X" ? "O" : "X"));
-      setWinner(resp.winner || null);
-      setDraw(resp.draw || false);
-      setWinningLine(resp.winning_line || null);
-      setStep(step + 1);
-      setMoveDesc(moves => moves.concat([{ desc: resp.desc || `Move #${step + 1}: ${current} to (${1 + (idx % 3)}, ${1 + Math.floor(idx/3)})`, squares: resp.squares || Array(9).fill("") }]));
-      if (resp.winner || resp.draw) {
-        fetchHistory(); // Update history at end of game
-      }
+      await apiPost("/game/move", body);
+      // Always re-fetch real board state from backend!
+      await fetchGameState(gameId);
+      setStep(s => s + 1);
+      setMoveDesc(moves =>
+        moves.concat([
+          {
+            desc: `Move #${step + 1}: ${current} to (${1 + (idx % 3)}, ${1 + Math.floor(idx / 3)})`,
+            squares: [...squares.slice(0, idx), current, ...squares.slice(idx + 1)],
+          },
+        ])
+      );
+      fetchHistory();
     } catch (e) {
       setError("Unable to make move");
     }
   }
 
-  // --- API: Go to move in history (local move stack only for current game) ---
+  // --- API: Go to move in history (only current session, local stack) ---
   // PUBLIC_INTERFACE
   function handleJump(moveIdx) {
-    // Limit: only works for current session (not persisted per move in backend)
     setStep(moveIdx);
     const move = moveDesc[moveIdx] || { squares: Array(9).fill("") };
     setSquares(move.squares);
@@ -135,9 +149,15 @@ function App() {
     }
   }
 
-  // --- Auto-start a game on app load if needed ---
+  // --- Fetch history on load ---
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  // --- Auto-start a game on initial load ---
   useEffect(() => {
     newGame();
+    // eslint-disable-next-line
   }, []);
 
   // === Render ===
