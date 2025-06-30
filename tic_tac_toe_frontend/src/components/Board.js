@@ -7,6 +7,11 @@ import React from "react";
  *   - That square is empty
  *   - onMove is provided (which is ONLY when it's really your turn, enforced by App)
  */
+/**
+ * PUBLIC_INTERFACE
+ * Board component renders the tic-tac-toe board using the current backend state (squares).
+ * The moveRefreshTick prop is supplied for guaranteed re-rendering after moves.
+ */
 export default function Board({
   squares,
   onMove,
@@ -15,6 +20,7 @@ export default function Board({
   current,
   playerSymbol,
   gameState,
+  moveRefreshTick, // Used to force rerender on move (value is ignored)
 }) {
   function renderSquare(i) {
     const highlight = winningLine && winningLine.includes(i);

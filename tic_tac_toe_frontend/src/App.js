@@ -167,7 +167,12 @@ function GameControls({
   );
 }
 
-// PUBLIC_INTERFACE
+/**
+ * PUBLIC_INTERFACE
+ *
+ * App component orchestrates the game UI, fetches state from backend, and
+ * manages board reactivity to backend updates.
+ */
 function App() {
   // Theme setup
   const [themeMode, setThemeMode] = useState("light");
@@ -186,6 +191,8 @@ function App() {
   const [gameList, setGameList] = useState([]); // All games for current player
   const [error, setError] = useState(null);
   const [selectedMode, setSelectedMode] = useState("human"); // ai/human
+  // Used to force rerender on move
+  const [moveRefreshTick, setMoveRefreshTick] = useState(0);
 
   // Poll for current game state if there is a gameId
   useEffect(() => {
@@ -288,6 +295,8 @@ function App() {
       // Always fetch up-to-date state from backend after making a move
       await fetchGameState(gameId); // refreshes UI by polling backend
       fetchHistory();
+      // Force rerender for Board in case React batching/delays
+      setMoveRefreshTick((tick) => tick + 1);
     } catch (e) {
       // Try to parse backend error
       let detail = "";
@@ -302,6 +311,7 @@ function App() {
       setError("Unable to make move: " + (detail || e.message || ""));
       // ALWAYS force refresh after error (may have lost sync with backend state)
       await fetchGameState(gameId);
+      setMoveRefreshTick((tick) => tick + 1);
     }
   }
 
@@ -457,6 +467,7 @@ function App() {
               current={current}
               playerSymbol={playerSymbol}
               gameState={gameState}
+              moveRefreshTick={moveRefreshTick} // to force rerender
             />
           </section>
           <aside className="ttt-main-right">
