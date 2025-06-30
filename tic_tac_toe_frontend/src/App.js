@@ -1,17 +1,48 @@
-import React, { useState, useEffect } from 'react';
-import './App.css';
-import './index.css';
-import { theme } from './theme';
-import Header from './components/Header';
-import Layout from './components/Layout';
-import Board from './components/Board';
-import GameInfoPanel from './components/GameInfoPanel';
-import GameHistory from './components/GameHistory';
+import React, { useState, useEffect } from "react";
+import "./App.css";
+import "./index.css";
+import { theme } from "./theme";
+import Header from "./components/Header";
+import Layout from "./components/Layout";
+import Board from "./components/Board";
+import GameInfoPanel from "./components/GameInfoPanel";
+import GameHistory from "./components/GameHistory";
 
-// UI: Game Controls components for join/create game
+/**
+ * Tic Tac Toe frontend: All UI state derived from backend API.
+ * The frontend does NOT store any local game, AI, or move state.
+ * Every interaction fetches or updates game state through backend endpoints.
+ */
+
+// Backend base URL - can be set via environment or fallback to suggested URL for Docker/local dev.
+const API_BASE = process.env.REACT_APP_API_BASE || "https://vscode-internal-8858-beta.beta01.cloud.kavia.ai:3001";
+
+// === API Helpers ===
+async function apiPost(path, data) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data || {})
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API error: ${resp.status} | ${text}`);
+  }
+  return await resp.json();
+}
+
+async function apiGet(path) {
+  const resp = await fetch(`${API_BASE}${path}`);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API error: ${resp.status} | ${text}`);
+  }
+  return await resp.json();
+}
+
+// GameControls: handles new game/join and mode selection
 function GameControls({
-  onCreate, onJoin, joinId, setJoinId, currentGameId,
-  selectedMode, setSelectedMode
+  onCreate, onJoin, joinId, setJoinId, currentGameId, selectedMode, setSelectedMode
 }) {
   return (
     <div style={{ marginBottom: 18, width: "100%" }}>
@@ -92,122 +123,66 @@ function GameControls({
     </div>
   );
 }
-/**
- * Tic Tac Toe frontend: Connects to FastAPI backend via RESTful API for gameplay, state, and history.
- * Robust error handling and API config included.
- */
 
-// Backend base URL - can be set via environment or fallback to suggested URL for Docker/local dev.
-const API_BASE = process.env.REACT_APP_API_BASE || "https://vscode-internal-8858-beta.beta01.cloud.kavia.ai:3001";
-
-// === API Helpers ===
-async function apiPost(path, data) {
-  const resp = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data || {}),
-  });
-  if (!resp.ok) {
-    throw new Error(`API error: ${resp.status}`);
-  }
-  return await resp.json();
-}
-
-async function apiGet(path) {
-  const resp = await fetch(`${API_BASE}${path}`);
-  if (!resp.ok) {
-    throw new Error(`API error: ${resp.status}`);
-  }
-  return await resp.json();
-}
-
+// PUBLIC_INTERFACE
 function App() {
-  // === Theme handling (light only per spec, allow future toggle) ===
-  const [themeMode, setThemeMode] = useState('light');
+  // Theme (can be extended later)
+  const [themeMode, setThemeMode] = useState("light");
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', themeMode);
+    document.documentElement.setAttribute("data-theme", themeMode);
   }, [themeMode]);
-  // --- End theme
 
-  // === Game state ===
-  const [squares, setSquares] = useState(Array(9).fill(""));
-  const [playerX, setPlayerX] = useState(""); // Player name or marker
-  const [playerO, setPlayerO] = useState("");
-  const [current, setCurrent] = useState("X");
-  const [winner, setWinner] = useState(null);
-  const [draw, setDraw] = useState(false);
-  const [winningLine, setWinningLine] = useState(null);
-  const [moveDesc, setMoveDesc] = useState([]);
-  const [step, setStep] = useState(0);
-  const [gameHistory, setGameHistory] = useState([]);
-  const [error, setError] = useState(null);
+  // All UI/game state from backend
   const [gameId, setGameId] = useState(null);
-  // New: game mode state ("human" or "ai"), store also last used mode for smooth UX
-  const [selectedMode, setSelectedMode] = useState("human");
-  const [activeMode, setActiveMode] = useState("human"); // The mode for the current game
-
-  // UI state for join
   const [joinGameIdInput, setJoinGameIdInput] = useState("");
+  const [gameState, setGameState] = useState(null); // latest board state response object
+  const [history, setHistory] = useState([]); // current game moves, as fetched from backend
+  const [gameList, setGameList] = useState([]); // history of games
+  const [error, setError] = useState(null);
+  const [selectedMode, setSelectedMode] = useState("human"); // game mode for new game
 
-  // --- API: fetch latest game state ---
-  async function fetchGameState(id) {
-    try {
-      const stateResp = await apiGet(`/game/state?game_id=${id}`);
-      setSquares(stateResp.squares || Array(9).fill(""));
-      setCurrent(stateResp.current || "X");
-      setWinner(stateResp.winner || null);
-      setDraw(stateResp.draw || false);
-      setWinningLine(stateResp.winning_line || null);
-    } catch (e) {
-      setError("Unable to update board from backend");
-    }
-  }
-
-  // --- Real-time updates using polling ---
+  // Poll current game state if there is a gameId
   useEffect(() => {
-    if (!gameId) return;
-
-    // Set up polling to fetch game state every 1.5 seconds when a game is active
-    const interval = setInterval(() => {
-      fetchGameState(gameId);
+    if (!gameId) {
+      setGameState(null);
+      setHistory([]);
+      return;
+    }
+    let interval = null;
+    // Initial fetch
+    fetchGameState(gameId);
+    // Polling for game state (real-time updates)
+    interval = setInterval(() => {
+      fetchGameState(gameId, { silent: true });
     }, 1500);
-
-    return () => {
-      clearInterval(interval);
-    };
-    // Only restart interval if gameId changes
+    return () => interval && clearInterval(interval);
+    // eslint-disable-next-line
   }, [gameId]);
 
-  // --- API: Start a new game ---
+  // Load global/all-game history on mount + whenever a game completes/starts
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  // --- API: Create new game ---
   // PUBLIC_INTERFACE
-  async function newGame(modeOverride) {
+  async function newGame(mode) {
     setError(null);
-    // Use modeOverride for "start new game" button, fallback to selectedMode for auto-starts
-    const mode = modeOverride || selectedMode || "human";
     try {
       const resp = await apiPost("/game/start", {
         mode: mode === "ai" ? "ai" : "human"
       });
       setGameId(resp.game_id || null);
-      setStep(0);
-      setMoveDesc([{ desc: "Game start", squares: resp.squares || Array(9).fill("") }]);
       setJoinGameIdInput("");
-      setActiveMode(resp.mode || mode); // store mode for current game
-      if (resp.game_id) {
-        await fetchGameState(resp.game_id);
-      } else {
-        setSquares(resp.squares || Array(9).fill(""));
-        setCurrent(resp.current || "X");
-        setWinner(resp.winner || null);
-        setDraw(resp.draw || false);
-        setWinningLine(resp.winning_line || null);
-      }
-      fetchHistory();
+      // Fetch state for new game
+      setTimeout(() => resp.game_id && fetchGameState(resp.game_id), 100);
+      fetchHistory(); // refresh overall game list
     } catch (e) {
       setError("Unable to start new game");
     }
   }
 
+  // --- API: Join game by ID ---
   // PUBLIC_INTERFACE
   async function joinGame(gameIdToJoin) {
     setError(null);
@@ -216,114 +191,107 @@ function App() {
       return;
     }
     try {
-      // "Join" the game by fetching its state; backend should validate existence and return state
-      const stateResp = await apiGet(`/game/state?game_id=${gameIdToJoin}`);
+      const stateResp = await fetchGameState(gameIdToJoin);
       setGameId(gameIdToJoin);
-      setStep(0);
-      setSquares(stateResp.squares || Array(9).fill(""));
-      setCurrent(stateResp.current || "X");
-      setWinner(stateResp.winner || null);
-      setDraw(stateResp.draw || false);
-      setWinningLine(stateResp.winning_line || null);
-      setMoveDesc([{ desc: "Joined Game", squares: stateResp.squares || Array(9).fill("") }]);
       setJoinGameIdInput("");
-      // Try to detect mode from backend state, fallback to current selected mode
-      setActiveMode(stateResp.mode || selectedMode || "human");
-      fetchHistory(); // (optional, refreshes list)
+      fetchHistory();
     } catch (e) {
       setError("Unable to join game. Check Game ID.");
     }
   }
 
-  // --- API: Make a move and always fetch board latest from backend ---
+  // --- API: Make a move ---
   // PUBLIC_INTERFACE
   async function handleMove(idx) {
     setError(null);
-    if (winner || draw || squares[idx] !== "") return;
+    if (!gameId || !gameState || gameState.squares?.[idx]) return;
+    if (gameState.winner || gameState.draw) return;
     try {
-      const body = {
+      await apiPost("/game/move", {
         game_id: gameId,
-        move: idx,
-        player: current,
-      };
-      await apiPost("/game/move", body);
-      // Always re-fetch real board state from backend!
+        move: idx
+      });
       await fetchGameState(gameId);
-      setStep(s => s + 1);
-      setMoveDesc(moves =>
-        moves.concat([
-          {
-            desc: `Move #${step + 1}: ${current} to (${1 + (idx % 3)}, ${1 + Math.floor(idx / 3)})`,
-            squares: [...squares.slice(0, idx), current, ...squares.slice(idx + 1)],
-          },
-        ])
-      );
       fetchHistory();
-
-      // If in AI mode and game not ended and after a human's move, ask backend for AI move
-      // Assumption: Player X is always the human, O is AI and AI moves after X
-      if (
-        activeMode === "ai" &&
-        !winner &&
-        !draw
-      ) {
-        // Fetch next state to get current player, trigger only if it's now AI's turn
-        const stateResp = await apiGet(`/game/state?game_id=${gameId}`);
-        if (stateResp.current === "O" && !stateResp.winner && !stateResp.draw) {
-          // Trigger AI move (could be backend auto, but trigger/post if needed)
-          // Option 1: Poll after small delay to let AI backend move, if AI is automatic
-          // Option 2: If manual, POST to /game/move for AI; assume automatic for now
-          // Wait and refetch state after slight delay (simulate AI "thinking" if backend is fast)
-          setTimeout(async () => {
-            try {
-              await fetchGameState(gameId);
-              fetchHistory();
-            } catch {
-              /* Ignore errors for auto-AI-move refetch */
-            }
-          }, 700); // 700ms for UI feedback
-        }
-      }
-
     } catch (e) {
       setError("Unable to make move");
     }
   }
 
-  // --- API: Go to move in history (only current session, local stack) ---
+  // --- API: Get full state of game and move history ---
+  // Keeps gameState and history in sync from backend
   // PUBLIC_INTERFACE
-  function handleJump(moveIdx) {
-    setStep(moveIdx);
-    const move = moveDesc[moveIdx] || { squares: Array(9).fill("") };
-    setSquares(move.squares);
-    // Winner/draw detection from move or API could be fancier
+  async function fetchGameState(gameIdToFetch, opts = {}) {
+    try {
+      // Main board state (may include info such as squares, winner, draw, etc.)
+      const stateResp = await apiGet(`/game/state?game_id=${gameIdToFetch}`);
+      setGameState(stateResp);
+      // Try to fetch move history for this game
+      // It's assumed a /game/history or /game/moves endpoint exists, or similar (if your backend supports it)
+      // If not, skip this gracefully
+      try {
+        const movesResp = await apiGet(`/game/moves?game_id=${gameIdToFetch}`);
+        // Expects: [{desc, squares}]
+        setHistory(
+          Array.isArray(movesResp.moves)
+            ? movesResp.moves.map((m, i) => ({
+                ...m,
+                desc: m.desc || `Move #${i + 1}`,
+                idx: i
+              }))
+            : []
+        );
+      } catch (err) {
+        setHistory([]);
+      }
+      return stateResp;
+    } catch (e) {
+      if (!opts.silent) setError("Unable to fetch game state");
+    }
+    return null;
   }
 
-  // --- API: Game history ---
+  // --- API: Jump to move (historical move rendering using backend-provided moves) ---
+  // Since frontend does NOT implement local board logic, this triggers display of a prior move's board state
+  // PUBLIC_INTERFACE
+  function handleJump(moveIdx) {
+    // If history available, display the squares for this move (NO local winner logic)
+    if (!history || moveIdx < 0 || moveIdx >= history.length) return;
+    setGameState(gs => ({
+      ...(gs || {}),
+      squares: history[moveIdx].squares
+    }));
+  }
+
+  // --- API: Fetch game list (all games) ---
   // PUBLIC_INTERFACE
   async function fetchHistory() {
     setError(null);
+    // Global game history (past games)
     try {
       const resp = await apiGet("/history/");
-      setGameHistory(resp.history || []);
+      setGameList(resp.history || []);
     } catch (e) {
-      setGameHistory([]);
+      setGameList([]);
       setError("Unable to fetch history");
     }
   }
 
-  // --- Fetch history on load ---
-  useEffect(() => {
-    fetchHistory();
-  }, []);
-
-  // --- Auto-start a game on initial load ---
-  useEffect(() => {
-    newGame();
-    // eslint-disable-next-line
-  }, []);
-
   // === Render ===
+  const squares = gameState?.squares ?? Array(9).fill("");
+  const winningLine = gameState?.winning_line || null;
+  const winner = gameState?.winner || null;
+  const draw = !!gameState?.draw;
+  const current = gameState?.current || "X";
+  // Player info is omitted by backend for simplicity (can extend to fetch names/IDs)
+  const playerX = "X", playerO = "O";
+
+  // History for the current session (moves)
+  const moveHistory =
+    Array.isArray(history) && history.length > 0
+      ? history
+      : [{ desc: "Game start", squares }];
+
   return (
     <div className="App" style={{ background: theme.colors.secondary, color: theme.colors.text }}>
       <Header />
@@ -353,16 +321,12 @@ function App() {
             />
           </aside>
         </main>
-        <GameHistory
-          history={moveDesc.length > 1 ? moveDesc : [{ desc: "Game start", squares }]}
-          onJump={handleJump}
-          currentMove={step}
-        />
+        <GameHistory history={moveHistory} onJump={handleJump} currentMove={moveHistory.length - 1} />
         <div style={{ marginTop: 24 }}>
           <div className="ttt-history-title" style={{ fontWeight: 700 }}>Game History (All)</div>
-          {Array.isArray(gameHistory) && gameHistory.length > 0 ? (
+          {Array.isArray(gameList) && gameList.length > 0 ? (
             <ul style={{ paddingLeft: 18, textAlign: "left" }}>
-              {gameHistory.map((g, i) => (
+              {gameList.map((g, i) => (
                 <li key={i}>
                   {g.date ? `${g.date}: ` : ""}
                   {g.result ? `${g.result}` : ""}
